@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>原奶比例管理</title>
+    <!-- 引入Element UI的样式 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-chalk/index.css">
+    <style>
+        .container {
+            padding: 20px;
+        }
+        .header {
+            margin-bottom: 20px;
+        }
+        .operation-row {
+            margin-bottom: 20px;
+        }
+        .substitute-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <!-- 标题 -->
+            <div class="header">
+                <h2>原奶比例管理</h2>
+            </div>
+
+            <!-- 筛选区域 -->
+            <el-form :inline="true" class="operation-row">
+                <el-form-item label="物料类别">
+                    <el-select v-model="filterCategory" placeholder="请选择物料类别" clearable>
+                        <el-option
+                            v-for="item in categories"
+                            :key="item.value"
+                            :label="item.label"
+                            :value="item.value">
+                        </el-option>
+                    </el-select>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="handleSearch">查询</el-button>
+                </el-form-item>
+            </el-form>
+
+            <!-- 操作按钮区域 -->
+            <div class="operation-row">
+                <el-button type="primary" @click="showAddDialog">新增</el-button>
+                <el-button type="success" @click="handleImport">导入</el-button>
+                <el-button type="warning" @click="handleExport">导出</el-button>
+            </div>
+
+            <!-- 表格区域 -->
+            <el-table :data="tableData" style="width: 100%">
+                <el-table-column type="index" label="序号" width="80"></el-table-column>
+                <el-table-column label="物料类别">
+                    <template slot-scope="scope">
+                        {{ getCategoryLabel(scope.row.category) }}
+                    </template>
+                </el-table-column>
+                <el-table-column prop="code" label="编码"></el-table-column>
+                <el-table-column label="原奶名称">
+                    <template slot-scope="scope">
+                        {{ getMilkLabel(scope.row.milkName) }}
+                    </template>
+                </el-table-column>
+                <el-table-column prop="milkCode" label="原奶编码"></el-table-column>
+                <el-table-column prop="fixedRatio" label="固定原奶比例(%)"></el-table-column>
+                <el-table-column prop="operator" label="操作人"></el-table-column>
+                <el-table-column prop="operateTime" label="操作时间"></el-table-column>
+                <el-table-column label="操作" width="150">
+                    <template slot-scope="scope">
+                        <el-button size="mini" @click="handleEdit(scope.row)">编辑</el-button>
+                        <el-button size="mini" type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+
+            <!-- 分页 -->
+            <div class="pagination-container" style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                <el-pagination
+                    @size-change="handleSizeChange"
+                    @current-change="handleCurrentChange"
+                    :current-page="currentPage"
+                    :page-size="10"
+                    layout="total, prev, pager, next"
+                    :total="total">
+                </el-pagination>
+            </div>
+
+            <!-- 新增/编辑弹窗 -->
+            <el-dialog :title="dialogTitle" :visible.sync="dialogVisible" width="50%">
+                <el-form :model="form" ref="form" :rules="rules" label-width="120px">
+                    <el-form-item label="物料类别" prop="category">
+                        <el-select v-model="form.category" placeholder="请选择物料类别" :disabled="isEdit">
+                            <el-option
+                                v-for="item in categories"
+                                :key="item.value"
+                                :label="item.label"
+                                :value="item.value">
+                            </el-option>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item label="编码">
+                        <el-input v-model="form.code" disabled></el-input>
+                    </el-form-item>
+                    <el-form-item label="原奶" prop="milkName">
+                        <el-select v-model="form.milkName" filterable placeholder="请选择原奶">
+                            <el-option
+                                v-for="item in milkOptions"
+                                :key="item.value"
+                                :label="item.label"
+                                :value="item.value">
+                            </el-option>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item label="原奶编码">
+                        <el-input v-model="form.milkCode" disabled></el-input>
+                    </el-form-item>
+                    <el-form-item label="固定原奶比例" prop="fixedRatio">
+                        <el-input-number 
+                            v-model="form.fixedRatio" 
+                            :min="0" 
+                            :max="100" 
+                            :precision="2"
+                            :step="0.1">
+                        </el-input-number>
+                    </el-form-item>
+
+                    <!-- 原奶替代料部分 -->
+                    <div class="substitutes-container">
+                        <div class="substitute-header" style="margin-bottom: 10px;">
+                            <span>原奶替代料</span>
+                            <el-button type="text" @click="addSubstitute">
+                                <i class="el-icon-plus"></i> 添加替代料
+                            </el-button>
+                        </div>
+                        <div v-for="(item, index) in form.substitutes" :key="index" class="substitute-item">
+                            <el-select v-model="item.name" filterable placeholder="选择物料" style="width: 200px;">
+                                <el-option
+                                    v-for="option in materialOptions"
+                                    :key="option.value"
+                                    :label="option.label"
+                                    :value="option.value">
+                                </el-option>
+                            </el-select>
+                            <el-input v-model="item.code" placeholder="物料编码" disabled style="width: 150px;"></el-input>
+                            <el-input-number 
+                                v-model="item.ratio" 
+                                :min="0" 
+                                :max="100" 
+                                :precision="2"
+                                :step="0.1"
+                                placeholder="替代比例">
+                            </el-input-number>
+                            <el-button type="danger" icon="el-icon-delete" circle @click="removeSubstitute(index)"></el-button>
+                        </div>
+                    </div>
+                </el-form>
+                <div slot="footer" class="dialog-footer">
+                    <el-button @click="dialogVisible = false">取 消</el-button>
+                    <el-button type="primary" @click="submitForm">确 定</el-button>
+                </div>
+            </el-dialog>
+        </div>
+    </div>
+
+    <!-- 引入必要的JS -->
+    <script src="https://unpkg.com/vue@2.6.14/dist/vue.js"></script>
+    <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+    <script src="./main.js"></script>
+</body>
+</html> 
